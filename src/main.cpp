@@ -6,6 +6,13 @@
 #include <Adafruit_SH110X.h>
 #include <Adafruit_GFX.h>
 
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+
+
+#define SERVICE_UUID        "2aae64b6-8f24-4643-9302-0ba146f8d9f2"
+#define CHARACTERISTIC_UUID "c94b7467-2490-46a2-b5e7-6a16752e13d3"
 
 
 // create and config a oled screen 
@@ -19,13 +26,32 @@ OneWire ds18x20[] = {2,3,4,5 };
 const int oneWireCount = sizeof(ds18x20) / sizeof(OneWire);
 DallasTemperature sensor[oneWireCount];
 
+bool on = true;
+int targetTemp = 40;
+
+
+class MyCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+
+    if (value.length() > 0) {
+      int cmd = std::stoi(value);
+      if(cmd == -1) {
+        on = false;
+      } else {
+        on = true;
+        targetTemp = cmd;
+      }
+    }
+  }
+};
+
 // Define IRF540N pin to control MCH
 int MCH1_pin = 20;
 int MCH2_pin = 21;
 bool is_MCH_1_OPEN = false;
 bool is_MCH_2_OPEN = false;
 
-int targetTemp = 40;
 
 void updateTemp();
 void displayOled();
@@ -43,6 +69,24 @@ void setup() {
   // config MCH pin
   pinMode(10, OUTPUT);
   pinMode(20, OUTPUT);
+
+  BLEDevice::init("Mag Warmer 1");
+  BLEServer *pServer = BLEDevice::createServer();
+
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+
+  BLECharacteristic *pCharacteristic = pService->createCharacteristic(
+                                         CHARACTERISTIC_UUID,
+                                         BLECharacteristic::PROPERTY_READ |
+                                         BLECharacteristic::PROPERTY_WRITE
+                                       );
+
+  pCharacteristic->setCallbacks(new MyCallbacks());
+  pService->start();
+
+  BLEAdvertising *pAdvertising = pServer->getAdvertising();
+  pAdvertising->start();
+
 }
 
 void loop() {
@@ -106,6 +150,14 @@ void updateTemp() {
 }
 
 void controlHeater() {
+  if(!on) {
+    is_MCH_1_OPEN = false;
+    is_MCH_2_OPEN = false;
+    digitalWrite(MCH1_pin, LOW);
+    digitalWrite(MCH2_pin, LOW);
+    return;
+  }
+
   if(sensor[0].getTempCByIndex(0)< targetTemp || sensor[1].getTempCByIndex(0)< targetTemp ) {
     Serial.println("MCH 1 on!");
     is_MCH_1_OPEN = true;
