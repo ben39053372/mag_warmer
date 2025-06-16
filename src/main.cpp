@@ -86,8 +86,15 @@ void displayOled() {
   display.println();
 
   for(int i = 0; i< oneWireCount; i++) {
-    display.printf("Temp %d: %f %cC \n", i, sensor[i].getTempCByIndex(0), 176);
+    display.printf("Temp %d: %d %cC \n", i, (int)(sensor[i].getTempCByIndex(0)), 247);
   }
+
+  display.println();
+  display.drawLine(0, display.getCursorY(), display.width() -1, display.getCursorY(), SH110X_WHITE);
+  display.println();
+
+  display.printf("Target Temp: %d %cC", targetTemp, 247);
+
   display.display();
 }
 
