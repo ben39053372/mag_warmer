@@ -5,6 +5,7 @@
 #include <DallasTemperature.h> 
 #include <Adafruit_SH110X.h>
 #include <Adafruit_GFX.h>
+#include <string> 
 
 #include <BLEDevice.h>
 #include <BLEUtils.h>
@@ -26,11 +27,26 @@ OneWire ds18x20[] = {2,3,4,5 };
 const int oneWireCount = sizeof(ds18x20) / sizeof(OneWire);
 DallasTemperature sensor[oneWireCount];
 
+BLECharacteristic *pCharacteristic;
+
+// define adc pin 
+#define ADC A0
+
 bool on = true;
 int targetTemp = 40;
 
+bool deviceConnected = false;
 
+class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      deviceConnected = true;
+    };
+    void onDisconnect(BLEServer* pServer) {
+      deviceConnected = false;
+    }
+};
 class MyCallbacks: public BLECharacteristicCallbacks {
+
   void onWrite(BLECharacteristic *pCharacteristic) {
     std::string value = pCharacteristic->getValue();
 
@@ -53,32 +69,93 @@ bool is_MCH_1_OPEN = false;
 bool is_MCH_2_OPEN = false;
 
 
-void updateTemp();
+void fetchTemp();
 void displayOled();
 void controlHeater();
 void startDs18b20();
+int getBatteryPower();
+void initBLE();
+void sendData();
+char *getData();
+int voltageToPercent(float voltage);
 
 void setup() {
   // start serial port
   Serial.begin(9600);
   delay(250);
   display.begin(0x3c, true);
-
   startDs18b20();
-
   // config MCH pin
   pinMode(10, OUTPUT);
   pinMode(20, OUTPUT);
+  // ADC
+  pinMode(ADC, INPUT);
 
+  initBLE();
+
+}
+
+void loop() {
+  fetchTemp();
+  controlHeater();
+  displayOled();
+  sendData();
+  delay(1000);
+}
+
+char* getData() {
+  static char buffer[100]; // Static buffer to store the result
+  String str = "";
+  
+  // Add power status
+  str += on ? "1," : "0,";
+  
+  // Add heater statuses
+  str += is_MCH_1_OPEN ? "1," : "0,";
+  str += is_MCH_2_OPEN ? "1," : "0,";
+  
+  // Add target temperature
+  str += String(targetTemp) + ",";
+  
+  // Add battery power
+  str += String(getBatteryPower()) + ",";
+  
+  // Add temperature readings
+  for(int i = 0; i < oneWireCount; i++) {
+    str += String((int)(sensor[i].getTempCByIndex(0)));
+    if(i < oneWireCount - 1) {
+      str += ",";
+    }
+  }
+
+  Serial.println(str);
+  
+  // Copy the string to the static buffer
+  strcpy(buffer, str.c_str());
+  return buffer;
+}
+
+void sendData() {
+  if(deviceConnected) {
+    char *data = getData();
+    pCharacteristic->setValue(data);
+    pCharacteristic->notify();
+  }
+}
+
+void initBLE() {
   BLEDevice::init("Mag Warmer 1");
   BLEServer *pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks);
 
   BLEService *pService = pServer->createService(SERVICE_UUID);
 
-  BLECharacteristic *pCharacteristic = pService->createCharacteristic(
+  pCharacteristic = pService->createCharacteristic(
                                          CHARACTERISTIC_UUID,
                                          BLECharacteristic::PROPERTY_READ |
-                                         BLECharacteristic::PROPERTY_WRITE
+                                         BLECharacteristic::PROPERTY_WRITE | 
+                                         BLECharacteristic::PROPERTY_BROADCAST |
+                                         BLECharacteristic::PROPERTY_NOTIFY
                                        );
 
   pCharacteristic->setCallbacks(new MyCallbacks());
@@ -86,14 +163,25 @@ void setup() {
 
   BLEAdvertising *pAdvertising = pServer->getAdvertising();
   pAdvertising->start();
-
 }
 
-void loop() {
-  updateTemp();
-  controlHeater();
-  displayOled();
-  delay(1000);
+int getBatteryPower() {
+  uint32_t voltageSum = 0;
+  const int sampleCount = 16;
+  for(int i=0;i< sampleCount;i++){
+    voltageSum += analogReadMilliVolts(ADC);
+    delay(10);
+  }
+  float voltageAvg = voltageSum / (float)sampleCount;
+  float batteryVoltage = voltageAvg * 2 / 1000.0;
+  Serial.print("Battery Voltage: ");
+  Serial.print(batteryVoltage , 3);
+  Serial.println(" V");
+  int percent = voltageToPercent(batteryVoltage);
+  Serial.print("Battery Power percent: ");
+  Serial.print(percent);
+  Serial.println("%");
+  return percent;
 }
 
 void startDs18b20() {
@@ -142,7 +230,7 @@ void displayOled() {
   display.display();
 }
 
-void updateTemp() {
+void fetchTemp() {
   for (int i = 0; i < oneWireCount; i++) {
     Serial.println("Requesting temperatures...");
     sensor[i].requestTemperatures();
@@ -177,36 +265,12 @@ void controlHeater() {
     digitalWrite(MCH2_pin, LOW);
   }
 }
-// #include <OneWire.h> 
-// #include <DallasTemperature.h> 
 
-// #define DQ_Pin 1
-
-// OneWire oneWire(DQ_Pin);
-// DallasTemperature sensors(&oneWire);
-
-// void setup(void)
-// {
-//   Serial.begin(9600);
-//   sensors.begin();
-// }
-
-// void loop(void)
-// {
-//   Serial.print("Temperatures --> ");
-//   sensors.requestTemperatures();
-//   Serial.println(sensors.getTempCByIndex(0));
-//   delay(2000);
-// }
-
-// void setup() {
-//   // initialize digital pin 13 as an output.
-//   pinMode(20, OUTPUT);
-//   }
-//   // the loop function runs over and over again forever
-//   void loop() {
-//   digitalWrite(20, HIGH); // turn the LED on (HIGH is the voltage level)
-//   // delay(1000); // wait for a second
-//   // digitalWrite(13, LOW); // turn the LED off by making the voltage LOW
-//   // delay(1000); // wait for a second
-//   }
+int voltageToPercent(float voltage) {
+  if (voltage >= 4.20) return 100;
+  else if (voltage >= 4.04) return map(voltage * 100, 404, 420, 80, 100);
+  else if (voltage >= 3.85) return map(voltage * 100, 385, 404, 50, 80);
+  else if (voltage >= 3.70) return map(voltage * 100, 370, 385, 20, 50);
+  else if (voltage >= 3.50) return map(voltage * 100, 350, 370, 5, 20);
+  else return 0;
+}
