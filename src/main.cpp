@@ -39,11 +39,15 @@ bool deviceConnected = false;
 
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
+      Serial.println("Connected");
       deviceConnected = true;
     };
     void onDisconnect(BLEServer* pServer) {
+      Serial.println("Disconnected");
       deviceConnected = false;
+      pServer->startAdvertising();
     }
+
 };
 class MyCallbacks: public BLECharacteristicCallbacks {
 
@@ -155,7 +159,7 @@ void initBLE() {
                                          BLECharacteristic::PROPERTY_READ |
                                          BLECharacteristic::PROPERTY_WRITE | 
                                          BLECharacteristic::PROPERTY_BROADCAST |
-                                         BLECharacteristic::PROPERTY_NOTIFY
+                                         BLECharacteristic::PROPERTY_NOTIFY 
                                        );
 
   pCharacteristic->setCallbacks(new MyCallbacks());
