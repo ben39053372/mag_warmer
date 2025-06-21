@@ -23,7 +23,7 @@
 Adafruit_SH1107 display = Adafruit_SH1107(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET, 1000000, 100000);
 
 // Define Temp DS18B20 pin
-OneWire ds18x20[] = {2,3,4,5 };
+OneWire ds18x20[] = {1,2,3,4 };
 const int oneWireCount = sizeof(ds18x20) / sizeof(OneWire);
 DallasTemperature sensor[oneWireCount];
 
@@ -67,8 +67,8 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 };
 
 // Define IRF540N pin to control MCH
-int MCH1_pin = 20;
-int MCH2_pin = 21;
+int MCH1_pin = 7;
+int MCH2_pin = 6;
 bool is_MCH_1_OPEN = false;
 bool is_MCH_2_OPEN = false;
 
@@ -90,8 +90,8 @@ void setup() {
   display.begin(0x3c, true);
   startDs18b20();
   // config MCH pin
-  pinMode(10, OUTPUT);
-  pinMode(20, OUTPUT);
+  pinMode(MCH1_pin, OUTPUT);
+  pinMode(MCH2_pin, OUTPUT);
   // ADC
   pinMode(ADC, INPUT);
 
@@ -104,7 +104,7 @@ void loop() {
   controlHeater();
   displayOled();
   sendData();
-  delay(1000);
+  delay(3000);
 }
 
 char* getData() {
@@ -248,6 +248,13 @@ void controlHeater() {
     digitalWrite(MCH1_pin, LOW);
     digitalWrite(MCH2_pin, LOW);
     return;
+  }
+
+  for(int i = 0; i < oneWireCount; i++) {
+    Serial.print("temp ");
+    Serial.print(i);
+    Serial.print(" :");
+    Serial.println(sensor[i].getTempCByIndex(0));
   }
 
   if(sensor[0].getTempCByIndex(0)< targetTemp || sensor[1].getTempCByIndex(0)< targetTemp ) {
