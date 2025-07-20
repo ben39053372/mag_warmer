@@ -23,7 +23,7 @@
 Adafruit_SH1107 display = Adafruit_SH1107(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET, 1000000, 100000);
 
 // Define Temp DS18B20 pin
-OneWire ds18x20[] = {1,2,3,4 };
+OneWire ds18x20[] = {1, 2, 3, 4, 10, 20 };
 const int oneWireCount = sizeof(ds18x20) / sizeof(OneWire);
 DallasTemperature sensor[oneWireCount];
 
@@ -69,9 +69,10 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 // Define IRF540N pin to control MCH
 int MCH1_pin = 7;
 int MCH2_pin = 6;
+int MCH3_pin = 5;
 bool is_MCH_1_OPEN = false;
 bool is_MCH_2_OPEN = false;
-
+bool is_MCH_3_OPEN = false;
 
 void fetchTemp();
 void displayOled();
@@ -104,7 +105,8 @@ void loop() {
   controlHeater();
   displayOled();
   sendData();
-  delay(3000);
+  getBatteryPower();
+  delay(1000);
 }
 
 char* getData() {
@@ -217,12 +219,20 @@ void displayOled() {
   } else {
     display.println("Heater 2 Off!");
   }
+  if(is_MCH_3_OPEN) {
+    display.println("Heater 3 On!");
+  } else {
+    display.println("Heater 3 Off!");
+  }
   display.println();
   display.drawLine(0, display.getCursorY(), display.width() -1, display.getCursorY(), SH110X_WHITE);
   display.println();
 
   for(int i = 0; i< oneWireCount; i++) {
-    display.printf("Temp %d: %d %cC \n", i, (int)(sensor[i].getTempCByIndex(0)), 247);
+    float temp = sensor[i].getTempCByIndex(0);
+    if(temp > 0) {
+      display.printf("Temp %d: %d %cC \n", i, (int)(sensor[i].getTempCByIndex(0)), 247);
+    }
   }
 
   display.println();
@@ -245,8 +255,10 @@ void controlHeater() {
   if(!on) {
     is_MCH_1_OPEN = false;
     is_MCH_2_OPEN = false;
+    is_MCH_3_OPEN = false;
     digitalWrite(MCH1_pin, LOW);
     digitalWrite(MCH2_pin, LOW);
+    digitalWrite(MCH3_pin, LOW);
     return;
   }
 
@@ -257,23 +269,32 @@ void controlHeater() {
     Serial.println(sensor[i].getTempCByIndex(0));
   }
 
-  if(sensor[0].getTempCByIndex(0)< targetTemp || sensor[1].getTempCByIndex(0)< targetTemp ) {
-    Serial.println("MCH 1 on!");
-    is_MCH_1_OPEN = true;
-    digitalWrite(MCH1_pin, HIGH);
-  } else {
+  if(sensor[0].getTempCByIndex(0) > targetTemp || sensor[1].getTempCByIndex(0) > targetTemp ) {
     Serial.println("MCH 1 off!");
     is_MCH_1_OPEN = false;
     digitalWrite(MCH1_pin, LOW);
-  }
-  if(sensor[2].getTempCByIndex(0)< targetTemp || sensor[3].getTempCByIndex(0) < targetTemp ) {
-    Serial.println("MCH 2 on!");
-    is_MCH_2_OPEN = true;
-    digitalWrite(MCH2_pin, HIGH);
   } else {
+    Serial.println("MCH 1 on!");
+    is_MCH_1_OPEN = true;
+    digitalWrite(MCH1_pin, HIGH);
+  }
+  if(sensor[2].getTempCByIndex(0) > targetTemp || sensor[3].getTempCByIndex(0) > targetTemp ) {
     Serial.println("MCH 2 off!");
     is_MCH_2_OPEN = false;
     digitalWrite(MCH2_pin, LOW);
+  } else {
+    Serial.println("MCH 2 on!");
+    is_MCH_2_OPEN = true;
+    digitalWrite(MCH2_pin, HIGH);
+  }
+  if(sensor[4].getTempCByIndex(0) > targetTemp || sensor[5].getTempCByIndex(0) > targetTemp ) {
+    Serial.println("MCH 3 off!");
+    is_MCH_3_OPEN = false;
+    digitalWrite(MCH3_pin, LOW);
+  } else {
+    Serial.println("MCH 3 on!");
+    is_MCH_3_OPEN = true;
+    digitalWrite(MCH3_pin, HIGH);
   }
 }
 
