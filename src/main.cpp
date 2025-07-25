@@ -116,7 +116,7 @@ void loop() {
 std::string getData() {
   json j;
   j["power"] = on;
-  j["heater"] = {is_MCH_1_OPEN, is_MCH_2_OPEN};
+  j["heater"] = {is_MCH_1_OPEN, is_MCH_2_OPEN, is_MCH_3_OPEN};
   j["targetTemp"] = targetTemp;
   j["voltage"] = getPowerVoltage();
 
