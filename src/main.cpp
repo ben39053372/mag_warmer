@@ -10,10 +10,13 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
+#include <nlohmann/json.hpp>
 
 
 #define SERVICE_UUID        "2aae64b6-8f24-4643-9302-0ba146f8d9f2"
 #define CHARACTERISTIC_UUID "c94b7467-2490-46a2-b5e7-6a16752e13d3"
+
+using json = nlohmann::json;
 
 
 // create and config a oled screen 
@@ -33,7 +36,7 @@ BLECharacteristic *pCharacteristic;
 #define ADC A0
 
 bool on = true;
-int targetTemp = 40;
+int targetTemp = 45;
 
 bool deviceConnected = false;
 
@@ -81,7 +84,8 @@ void startDs18b20();
 int getBatteryPower();
 void initBLE();
 void sendData();
-char *getData();
+std::string getData();
+float getPowerVoltage ();
 int voltageToPercent(float voltage);
 
 void setup() {
@@ -109,41 +113,26 @@ void loop() {
   delay(1000);
 }
 
-char* getData() {
-  static char buffer[100]; // Static buffer to store the result
-  String str = "";
-  
-  // Add power status
-  str += on ? "1," : "0,";
-  
-  // Add heater statuses
-  str += is_MCH_1_OPEN ? "1," : "0,";
-  str += is_MCH_2_OPEN ? "1," : "0,";
-  
-  // Add target temperature
-  str += String(targetTemp) + ",";
-  
-  // Add battery power
-  str += String(getBatteryPower()) + ",";
-  
-  // Add temperature readings
-  for(int i = 0; i < oneWireCount; i++) {
-    str += String((int)(sensor[i].getTempCByIndex(0)));
-    if(i < oneWireCount - 1) {
-      str += ",";
-    }
-  }
+std::string getData() {
+  json j;
+  j["power"] = on;
+  j["heater"] = {is_MCH_1_OPEN, is_MCH_2_OPEN};
+  j["targetTemp"] = targetTemp;
+  j["voltage"] = getPowerVoltage();
 
-  Serial.println(str);
-  
-  // Copy the string to the static buffer
-  strcpy(buffer, str.c_str());
-  return buffer;
+    // Add temperature readings
+  int temp[oneWireCount];
+  for(int i = 0; i < oneWireCount; i++) {
+    temp[i] = (int)(sensor[i].getTempCByIndex(0));
+  }
+  j["temp"] = temp;
+
+  return j.dump();
 }
 
 void sendData() {
   if(deviceConnected) {
-    char *data = getData();
+    std::string data = getData();
     pCharacteristic->setValue(data);
     pCharacteristic->notify();
   }
@@ -169,6 +158,18 @@ void initBLE() {
 
   BLEAdvertising *pAdvertising = pServer->getAdvertising();
   pAdvertising->start();
+}
+
+float getPowerVoltage () {
+  uint32_t voltageSum = 0;
+  const int sampleCount = 16;
+  for(int i=0;i< sampleCount;i++){
+    voltageSum += analogReadMilliVolts(ADC);
+    delay(10);
+  }
+  float voltageAvg = voltageSum / (float)sampleCount;
+  float batteryVoltage = voltageAvg * 2 / 1000.0;
+  return batteryVoltage;
 }
 
 int getBatteryPower() {
@@ -208,6 +209,14 @@ void displayOled() {
   display.setTextSize(1);
   display.setCursor(0 ,0);
   display.setTextColor(SH110X_WHITE);
+  if(on) {
+    display.println("Power: On!");
+  } else {
+    display.println("Power: Off!");
+  }
+  display.println();
+  display.drawLine(0, display.getCursorY(), display.width() -1, display.getCursorY(), SH110X_WHITE);
+  display.println();
   if(is_MCH_1_OPEN) {
     display.println("Heater 1 On!");
   } else {
@@ -269,7 +278,7 @@ void controlHeater() {
     Serial.println(sensor[i].getTempCByIndex(0));
   }
 
-  if(sensor[0].getTempCByIndex(0) > targetTemp || sensor[1].getTempCByIndex(0) > targetTemp ) {
+  if(sensor[0].getTempCByIndex(0) >= targetTemp || sensor[1].getTempCByIndex(0) >= targetTemp ) {
     Serial.println("MCH 1 off!");
     is_MCH_1_OPEN = false;
     digitalWrite(MCH1_pin, LOW);
@@ -278,7 +287,7 @@ void controlHeater() {
     is_MCH_1_OPEN = true;
     digitalWrite(MCH1_pin, HIGH);
   }
-  if(sensor[2].getTempCByIndex(0) > targetTemp || sensor[3].getTempCByIndex(0) > targetTemp ) {
+  if(sensor[2].getTempCByIndex(0) >= targetTemp || sensor[3].getTempCByIndex(0) >= targetTemp ) {
     Serial.println("MCH 2 off!");
     is_MCH_2_OPEN = false;
     digitalWrite(MCH2_pin, LOW);
@@ -287,7 +296,7 @@ void controlHeater() {
     is_MCH_2_OPEN = true;
     digitalWrite(MCH2_pin, HIGH);
   }
-  if(sensor[4].getTempCByIndex(0) > targetTemp || sensor[5].getTempCByIndex(0) > targetTemp ) {
+  if(sensor[4].getTempCByIndex(0) >= (targetTemp -3) || sensor[5].getTempCByIndex(0) >= (targetTemp -3) ) {
     Serial.println("MCH 3 off!");
     is_MCH_3_OPEN = false;
     digitalWrite(MCH3_pin, LOW);
