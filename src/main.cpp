@@ -35,6 +35,17 @@ BLECharacteristic *pCharacteristic;
 // define adc pin 
 #define ADC A0
 
+// Define IRF540N pin to control MCH
+int MCH1_pin = 7;
+int MCH2_pin = 6;
+int MCH3_pin = 5;
+bool is_MCH_1_FORCE_OFF = false;
+bool is_MCH_1_OPEN = false;
+bool is_MCH_2_FORCE_OFF = false;
+bool is_MCH_2_OPEN = false;
+bool is_MCH_3_FORCE_OFF = false;
+bool is_MCH_3_OPEN = false;
+
 bool on = true;
 int targetTemp = 45;
 
@@ -55,27 +66,66 @@ class MyServerCallbacks: public BLEServerCallbacks {
 class MyCallbacks: public BLECharacteristicCallbacks {
 
   void onWrite(BLECharacteristic *pCharacteristic) {
+    Serial.print("on write: getValue: ");
     std::string value = pCharacteristic->getValue();
 
-    if (value.length() > 0) {
-      int cmd = std::stoi(value);
-      if(cmd == -1) {
-        on = false;
-      } else {
-        on = true;
-        targetTemp = cmd;
+    if (value.length() > 0) { // 判断 value的长度是否大于0
+      // 大于 0 表示 value 非空，则在串口中输出其值
+      Serial.println("*********"); 
+      Serial.print("New value: ");
+      for (int i = 0; i < value.length(); i++)
+        Serial.print(value[i]);
+      
+      if(value.find("targetTemp") != std::string::npos) {
+        Serial.print("set targetTemp to");
+        std::size_t pos = value.find(":");
+        targetTemp = atoi(value.substr(pos+1).c_str());
+        Serial.println(targetTemp);
       }
+      if(value.find("heaterON") != std::string::npos) {
+        Serial.print("set Heater on");
+        std::size_t pos = value.find(":");
+        int numOfHeater = atoi(value.substr(pos+1).c_str());
+        if(numOfHeater == 1) {
+          is_MCH_1_FORCE_OFF = false;
+        }
+        if(numOfHeater == 2) {
+          is_MCH_2_FORCE_OFF = false;
+        }
+        if(numOfHeater == 3) {
+          is_MCH_3_FORCE_OFF = false;
+        }
+      }
+      if(value.find("heaterOFF") != std::string::npos) {
+        Serial.print("set Heater off");
+        std::size_t pos = value.find(":");
+        int numOfHeater = atoi(value.substr(pos+1).c_str());
+        if(numOfHeater == 1) {
+          is_MCH_1_FORCE_OFF = true;
+        }
+        if(numOfHeater == 2) {
+          is_MCH_2_FORCE_OFF = true;
+        }
+        if(numOfHeater == 3) {
+          is_MCH_3_FORCE_OFF = true;
+        }
+      }
+      if(value.find("powerON") != std::string::npos) {
+        Serial.print("set power on");
+        on = true;
+      }
+      if(value.find("powerOFF") != std::string::npos) {
+        Serial.print("set power off");
+        on = false;
+      }
+      Serial.println();
+      Serial.println("*********");
     }
+
   }
 };
 
-// Define IRF540N pin to control MCH
-int MCH1_pin = 7;
-int MCH2_pin = 6;
-int MCH3_pin = 5;
-bool is_MCH_1_OPEN = false;
-bool is_MCH_2_OPEN = false;
-bool is_MCH_3_OPEN = false;
+
 
 void fetchTemp();
 void displayOled();
@@ -282,7 +332,7 @@ void controlHeater() {
     Serial.println("MCH 1 off!");
     is_MCH_1_OPEN = false;
     digitalWrite(MCH1_pin, LOW);
-  } else {
+  } else if(!is_MCH_1_FORCE_OFF) {
     Serial.println("MCH 1 on!");
     is_MCH_1_OPEN = true;
     digitalWrite(MCH1_pin, HIGH);
@@ -291,16 +341,16 @@ void controlHeater() {
     Serial.println("MCH 2 off!");
     is_MCH_2_OPEN = false;
     digitalWrite(MCH2_pin, LOW);
-  } else {
+  } else if(!is_MCH_2_FORCE_OFF) {
     Serial.println("MCH 2 on!");
     is_MCH_2_OPEN = true;
     digitalWrite(MCH2_pin, HIGH);
   }
-  if(sensor[4].getTempCByIndex(0) >= (targetTemp -3) || sensor[5].getTempCByIndex(0) >= (targetTemp -3) ) {
+  if(sensor[4].getTempCByIndex(0) >= targetTemp || sensor[5].getTempCByIndex(0) >= targetTemp ) {
     Serial.println("MCH 3 off!");
     is_MCH_3_OPEN = false;
     digitalWrite(MCH3_pin, LOW);
-  } else {
+  } else if(!is_MCH_3_FORCE_OFF) {
     Serial.println("MCH 3 on!");
     is_MCH_3_OPEN = true;
     digitalWrite(MCH3_pin, HIGH);
